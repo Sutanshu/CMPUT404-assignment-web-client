@@ -17,13 +17,13 @@
 # Do not use urllib's HTTP GET and POST mechanisms.
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
-
+# Assignment author: Sutanshu Seth, Feb 11, 2022.
 import sys
 import socket
 import re
 
 # you may use urllib to encode data appropriately
-# import urllib.parse
+import urllib.parse
 
 
 def help():
@@ -48,13 +48,19 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        headers = self.get_headers(data)
+        for header in headers:
+            code = re.findall(r"\D\d{3}\D", header)
+            return int(code[0])
+        return 500
 
     def get_headers(self, data):
-        return None
+        allHeaders = data.split("\r\n\r\n")[0]
+        return allHeaders.split("\r\n")
 
     def get_body(self, data):
-        return None
+        body = data.split("\r\n\r\n")[1]
+        return body
 
     def sendall(self, data):
         self.socket.sendall(data.encode("utf-8"))
@@ -72,22 +78,85 @@ class HTTPClient(object):
                 buffer.extend(part)
             else:
                 done = not part
-        print("hello?")
         return buffer.decode("utf-8")
 
     def GET(self, url, args=None):
-        # code = 200
-        remoteIp = socket.gethostbyname(url)
-        body = "GET / HTTP/1.0\r\nHost:" + remoteIp + "\r\n\r\n"
-        self.connect(remoteIp, 80)
-        self.sendall(body)
-        print(self.recvall(self.socket))
-        return HTTPResponse(body)
 
-    def POST(self, url, args=None):
         code = 500
         body = ""
+
+        parsedUrl = urllib.parse.urlparse(url)
+
+        # Destructure the parsed url
+        port, parsedHost, path = parsedUrl.port, parsedUrl.hostname, parsedUrl.path
+
+        if not port:
+            # Default port
+            port = 80
+
+        if not path:
+            # Default path, go to root
+            path = "/"
+
+        hostName = socket.gethostbyname(parsedHost)
+
+        self.connect(hostName, port)
+
+        # Forming the payload that's to be sent to server
+        payload = (
+            "GET {} HTTP/1.1\r\nAccept: */*\r\nAccept-Encoding: */*\r\nHost: {}\r\nConnection: Close\r\n\r\n".format(
+                path, parsedHost
+            )
+        )
+
+        # Sending the payload
+        self.sendall(payload)
+
+        # Receiving the response, and returning status code and body
+        res = self.recvall(self.socket)
+        code, body = self.get_code(res), self.get_body(res)
+        print(body)
+        self.close()
+
         return HTTPResponse(code, body)
+
+    def POST(self, url, args=None):
+
+        code = 500
+        body = ""
+        parsedUrl = urllib.parse.urlparse(url)
+
+        # Destructure the parsed url
+        port, parsedHost, path = parsedUrl.port, parsedUrl.hostname, parsedUrl.path
+
+        if not port:
+            # Default port
+            port = 80
+
+        if not path:
+            # Default path, go to root
+            path = "/"
+
+        hostName = socket.gethostbyname(parsedHost)
+
+        self.connect(hostName, port)
+
+        if args:
+            args = str(urllib.parse.urlencode(args))
+        else:
+            args = ""
+
+        payload = "POST {} HTTP/1.1\r\nHost: {}\r\nAccept: /*/\r\nConnection: Close\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{}\r\n\r\n".format(
+            path, parsedHost, len(args), args
+        )
+
+        self.sendall(payload)
+        res = self.recvall(self.socket)
+        code, body = self.get_code(res), self.get_body(res)
+        print(body)
+        self.close()
+
+        return HTTPResponse(int(code), body)
 
     def command(self, url, command="GET", args=None):
         if command == "POST":
